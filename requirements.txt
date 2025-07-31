@@ -1,0 +1,8 @@
+streamlit
+pandas
+bertopic
+sentence-transformers
+umap-learn
+hdbscan
+plotly 
+openpyxl
