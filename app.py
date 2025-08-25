@@ -5,6 +5,7 @@ from sentence_transformers import SentenceTransformer
 from umap import UMAP
 from hdbscan import HDBSCAN
 import plotly.express as px
+import io
 
 st.title("Stakeholder Needs vs Supply Matcher")
 
@@ -29,13 +30,18 @@ if needs_file and supply_file:
     supply_col = st.selectbox("Select column for Supply", supply_df.columns)
     
     if st.button("Process"):
-        # Extract texts
-        needs_texts = needs_df[needs_col].dropna().tolist()
-        supply_texts = supply_df[supply_col].dropna().tolist()
-        
-        # Combine with labels
-        all_texts = needs_texts + supply_texts
-        labels = ['Need'] * len(needs_texts) + ['Supply'] * len(supply_texts)
+        # Build union of original rows used for clustering
+        needs_subset = needs_df[needs_df[needs_col].notna()].copy()
+        needs_subset["text"] = needs_subset[needs_col].astype(str)
+        needs_subset["type"] = "Need"
+        supply_subset = supply_df[supply_df[supply_col].notna()].copy()
+        supply_subset["text"] = supply_subset[supply_col].astype(str)
+        supply_subset["type"] = "Supply"
+        combined_subset = pd.concat([needs_subset, supply_subset], ignore_index=True, sort=False)
+
+        # Combine with labels for modeling/visualization
+        all_texts = combined_subset["text"].tolist()
+        labels = combined_subset["type"].tolist()
         
         # Embeddings
         embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
@@ -97,3 +103,20 @@ if needs_file and supply_file:
             st.write("**Supplies:**")
             for s in data['supplies']:
                 st.write(f"- {s}")
+        # Persist union of inputs with assigned topics for download
+        combined_subset["topic"] = topics
+        st.session_state["union_with_topics"] = combined_subset
+
+    # Render download button if results are available
+    if "union_with_topics" in st.session_state:
+        output_df = st.session_state["union_with_topics"]
+        excel_buffer = io.BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine="openpyxl") as writer:
+            output_df.to_excel(writer, index=False, sheet_name="union_with_topics")
+        excel_buffer.seek(0)
+        st.download_button(
+            label="Download clustering union with topics (Excel)",
+            data=excel_buffer.getvalue(),
+            file_name="clustering_union_with_topics.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
